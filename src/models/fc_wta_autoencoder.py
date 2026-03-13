@@ -39,8 +39,3 @@ class FC_WTA_Autoencoder(nn.Module):
         z2 = F.linear(a1, self.encoder.weight.t(), self.decoder_bias)
 
         return z2
-
-    def encode(self, x: torch.Tensor) -> torch.Tensor:
-        if x.ndim == 1:
-            x = x.unsqueeze(0)
-        return self.relu(self.encoder(x))

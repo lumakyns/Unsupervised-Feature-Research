@@ -28,8 +28,3 @@ class Autoencoder(nn.Module):
         z2 = self.decoder(a1)
 
         return z2
-
-    def encode(self, x: torch.Tensor) -> torch.Tensor:
-        if x.ndim == 1:
-            x = x.unsqueeze(0)
-        return self.sigmoid(self.encoder(x))
