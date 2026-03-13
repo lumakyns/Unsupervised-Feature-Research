@@ -24,7 +24,7 @@ class CIFAR10PatchesColor(Dataset):
     def __init__(
         self,
         train: bool = True,
-        num_samples: int = 1_000_000,
+        num_samples: int = 10_000,
         patch_size: int = 8,
         lcn_eps: float = 1e-8,
         zca_eps: float = 1e-5,
