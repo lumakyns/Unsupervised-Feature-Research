@@ -4,6 +4,7 @@ from torchvision import datasets, transforms
 from .mnist_patches import MNISTPatches
 from .cifar10_patches import CIFAR10Patches
 from .cifar10_patches_color import CIFAR10PatchesColor
+from .cifar10_color import CIFAR10Color
 
 
 def get_data_loader(dataset: str, train: bool = True, batch_size: int = 128) -> DataLoader:
@@ -38,6 +39,10 @@ def get_data_loader(dataset: str, train: bool = True, batch_size: int = 128) -> 
         return DataLoader(datasets.CIFAR10('../data', train=train, download=True, transform=transform),
                           batch_size=batch_size, shuffle=train, pin_memory=True)
 
+    elif dataset == "cifar10_color":
+        return DataLoader(CIFAR10Color(train=train),
+                          batch_size=batch_size, shuffle=train, pin_memory=True)
+
     else:
         raise ValueError(f"Unknown dataset: {dataset!r}")
 
@@ -55,14 +60,19 @@ def get_flattened_size(dataset: str) -> int:
     elif dataset == "cifar10":
         return 32 * 32
 
+    elif dataset == "cifar10_color":
+        return 32 * 32 * 3
+
     else:
         raise ValueError(f"Unknown dataset: {dataset!r}")
 
 
 def get_patch_shape(dataset: str) -> tuple:
-    """Return (C, H, W) for patch-based datasets."""
+    """Return (C, H, W) for visualization (patches or full images)."""
     if dataset in ("mnist_patches", "cifar10_patches"):
         return (1, 8, 8)
     elif dataset == "cifar10_patches_color":
         return (3, 8, 8)
-    raise ValueError(f"Unknown patch dataset: {dataset!r}")
+    elif dataset == "cifar10_color":
+        return (3, 32, 32)
+    raise ValueError(f"Unknown dataset for patch shape: {dataset!r}")
