@@ -7,6 +7,7 @@ class K_Sparse_Autoencoder(nn.Module):
     def __init__(
         self,
         dim: tuple,
+        a: int,
         k: int,
         total_epochs: int,
         dataset_size: int,
@@ -14,6 +15,7 @@ class K_Sparse_Autoencoder(nn.Module):
         super().__init__()
 
         self.input_dim, self.bottleneck_dim = dim
+        self.a = a
         self.k = k  # number of activations to keep per sample
         self.total_epochs = total_epochs
         self.dataset_size = dataset_size
@@ -24,9 +26,11 @@ class K_Sparse_Autoencoder(nn.Module):
 
     def _apply_topk_mask(self, activations: torch.Tensor, k_count: int) -> torch.Tensor:
         k_count = min(max(1, int(k_count)), activations.shape[1])
+        
         _, topk_idx = torch.topk(activations, k_count, dim=1)
         mask = torch.zeros_like(activations)
         mask.scatter_(1, topk_idx, 1)
+        
         return activations * mask
 
     def forward(
@@ -56,10 +60,11 @@ class K_Sparse_Autoencoder(nn.Module):
             current_k = self.k
 
         k_count = min(int(current_k), self.bottleneck_dim)
+        
         a1 = self._apply_topk_mask(a1, k_count)
-
         z2 = F.linear(a1, self.encoder.weight.t(), self.decoder_bias)
 
+        self.last_k = k_count
         return z2
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
