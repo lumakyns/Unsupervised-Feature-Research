@@ -14,9 +14,9 @@ class WTA_FC_AE(nn.Module):
         self.input_dim, self.bottleneck_dim = dim
         self.k = k  # number of winners (activations to keep) per hidden unit
 
-        self.encoder      = nn.Linear(self.input_dim, self.bottleneck_dim)
-        self.relu         = nn.ReLU()
-        self.decoder_bias = nn.Parameter(torch.zeros(self.input_dim))
+        self.encoder = nn.Linear(self.input_dim, self.bottleneck_dim, bias=False)
+        self.relu    = nn.ReLU()
+        self.decoder = nn.Linear(self.bottleneck_dim, self.input_dim, bias=False)
 
     def _apply_lifetime_sparsity(self, activations: torch.Tensor) -> torch.Tensor:
         k_count = min(max(1, self.k), activations.shape[0])
@@ -37,7 +37,9 @@ class WTA_FC_AE(nn.Module):
 
         if self.training:
             a1 = self._apply_lifetime_sparsity(a1)
+        else:
+            self.last_latent = a1.detach()
 
-        z2 = F.linear(a1, self.encoder.weight.t(), self.decoder_bias)
+        z2 = self.decoder(a1)
 
         return z2

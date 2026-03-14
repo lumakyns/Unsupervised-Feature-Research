@@ -11,9 +11,9 @@ class Autoencoder(nn.Module):
 
         self.input_dim, self.bottleneck_dim = dim
 
-        self.encoder = nn.Linear(self.input_dim, self.bottleneck_dim)
+        self.encoder = nn.Linear(self.input_dim, self.bottleneck_dim, bias=False)
         self.sigmoid = nn.Sigmoid()
-        self.decoder = nn.Linear(self.bottleneck_dim, self.input_dim)
+        self.decoder = nn.Linear(self.bottleneck_dim, self.input_dim, bias=False)
 
     def forward(
         self,
@@ -25,6 +25,8 @@ class Autoencoder(nn.Module):
 
         z1 = self.encoder(x)
         a1 = self.sigmoid(z1)
+        if not self.training:
+            self.last_latent = a1.detach()
         z2 = self.decoder(a1)
 
         return z2

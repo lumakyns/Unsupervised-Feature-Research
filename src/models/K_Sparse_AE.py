@@ -20,16 +20,16 @@ class K_Sparse_AE(nn.Module):
         self.total_epochs = total_epochs
         self.dataset_size = dataset_size
 
-        self.encoder      = nn.Linear(self.input_dim, self.bottleneck_dim)
-        self.identity     = nn.Identity()
-        self.decoder_bias = nn.Parameter(torch.zeros(self.input_dim))
+        self.encoder  = nn.Linear(self.input_dim, self.bottleneck_dim, bias=False)
+        self.identity = nn.Identity()
+        self.decoder  = nn.Linear(self.bottleneck_dim, self.input_dim, bias=False)
 
     def _apply_k_sparsity(self, activations: torch.Tensor, k: float) -> tuple[torch.Tensor, int]:
         k_count = min(max(1, int(k)), activations.shape[1])
         _, topk_idx = torch.topk(activations, k_count, dim=1)
         mask = torch.zeros_like(activations)
         mask.scatter_(1, topk_idx, 1)
-        return activations * mask, k_count
+        return activations * mask
 
     def forward(
         self,
@@ -56,7 +56,13 @@ class K_Sparse_AE(nn.Module):
             current_k = self.bottleneck_dim + progress * (self.k - self.bottleneck_dim)
         else:
             current_k = self.a * self.k
+            
+        self.last_k = min(max(1, int(current_k)), self.bottleneck_dim)
 
-        a1, self.last_k = self._apply_k_sparsity(a1, current_k)
-        z2 = F.linear(a1, self.encoder.weight.t(), self.decoder_bias)
+        a1 = self._apply_k_sparsity(a1, current_k)
+        
+        if not self.training:
+            self.last_latent = a1.detach()
+            
+        z2 = self.decoder(a1)
         return z2

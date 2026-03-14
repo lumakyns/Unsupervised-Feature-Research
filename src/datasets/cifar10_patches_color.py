@@ -40,34 +40,32 @@ class CIFAR10PatchesColor(Dataset):
         self.num_samples = num_samples
         self.patch_size = patch_size
 
-        images_flat = images.numpy().reshape(images.shape[0], -1)
-        images_flat = local_contrast_normalize(images_flat, eps=lcn_eps)
-        images_flat = zca_whiten(images_flat, eps=zca_eps)
-
-        self.whitened_images = images_flat.reshape(images.shape)
-
-        image_height = self.whitened_images.shape[2]
-        image_width  = self.whitened_images.shape[3]
+        image_height = images.shape[2]
+        image_width = images.shape[3]
         grid_h = image_height // patch_size
         grid_w = image_width // patch_size
 
         patches_list = []
         for _ in tqdm(range(num_samples), desc="Extracting patches"):
-            image_idx = np.random.randint(0, self.whitened_images.shape[0])
+            image_idx = np.random.randint(0, images.shape[0])
             grid_x = np.random.randint(0, grid_h)
             grid_y = np.random.randint(0, grid_w)
             x_start = grid_x * patch_size
             y_start = grid_y * patch_size
 
-            patch = self.whitened_images[
+            patch = images[
                 image_idx,
                 :,
                 x_start : x_start + patch_size,
                 y_start : y_start + patch_size,
             ]
-            patches_list.append(patch.flatten())
+            patches_list.append(patch.numpy().flatten())
 
-        self.patches = torch.from_numpy(np.stack(patches_list)).float()
+        patches = np.stack(patches_list)
+        patches = local_contrast_normalize(patches, eps=lcn_eps)
+        patches = zca_whiten(patches, eps=zca_eps)
+
+        self.patches = torch.from_numpy(patches).float()
 
     def __len__(self):
         return self.num_samples
