@@ -8,15 +8,51 @@ class WTA_CONV_AE(nn.Module):
         dim: tuple,
         k_spatial: float,
         k_lifetime: float,
+        use_population_sparsity: bool = False,
+        k_population: float | None = None,
+        total_epochs: int = 1,
+        dataset_size: int = 1,
     ) -> None:
         super().__init__()
         self.in_ch, self.in_h, self.in_w, self.hidden_ch = dim
         self.k_spatial  = k_spatial
         self.k_lifetime = k_lifetime
+        self.k_population = k_population if k_population is not None else k_lifetime
+        self.total_epochs = total_epochs
+        self.dataset_size = dataset_size
 
-        self.encoder   = nn.Conv2d(self.in_ch, self.hidden_ch, kernel_size=5, padding=2, bias=False)
-        self.decoder   = nn.ConvTranspose2d(self.hidden_ch, self.in_ch, kernel_size=11, padding=5, bias=False)
-        self.relu      = nn.ReLU()
+        if k_population is not None and k_lifetime is not None:
+            raise ValueError("Specify either lifetime k or population k, not both.")
+
+        self.encoder = nn.Conv2d(self.in_ch, self.hidden_ch, kernel_size=5, padding=2, bias=False)
+        self.decoder = nn.ConvTranspose2d(self.hidden_ch, self.in_ch, kernel_size=11, padding=5, bias=False)
+        self.relu    = nn.ReLU()
+
+    def _compute_annealed_k(
+        self,
+        epoch: int,
+        inputs_processed_in_epoch: int,
+    ) -> float:
+        target_k_channels = self.k_population * self.hidden_ch
+        current_samples = epoch * self.dataset_size + inputs_processed_in_epoch
+        anneal_samples  = (self.total_epochs // 2) * self.dataset_size
+        if anneal_samples > 0:
+            progress = min(current_samples / anneal_samples, 1.0)
+        else:
+            progress = 1.0
+        start_k = float(self.hidden_ch)
+        current_k = start_k + progress * (target_k_channels - start_k)
+        return current_k / float(self.hidden_ch)
+
+    def _apply_population_sparsity(self, activations: torch.Tensor, k_frac: float) -> torch.Tensor:
+        B, C, H, W = activations.shape
+        k_channels = max(1, int(k_frac * self.hidden_ch))
+        k_channels = min(k_channels, self.hidden_ch)
+        scores = activations.view(B, C, -1).pow(2).sum(dim=2)
+        _, topk_idx = torch.topk(scores, k_channels, dim=1)
+        mask = torch.zeros_like(scores)
+        mask.scatter_(1, topk_idx, 1)
+        return activations * mask.view(B, C, 1, 1)
 
     def _apply_spatial_sparsity(self, activations: torch.Tensor) -> torch.Tensor:
         B, C, H, W = activations.shape
@@ -38,7 +74,12 @@ class WTA_CONV_AE(nn.Module):
         mask.scatter_(1, topk_idx, 1)
         return activations * mask.view(B, C, H, W)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        epoch: int = 0,
+        inputs_processed_in_epoch: int = 0,
+    ) -> torch.Tensor:
         if x.ndim == 2:
             x = x.view(x.shape[0], self.in_ch, self.in_h, self.in_w)
 
@@ -47,7 +88,14 @@ class WTA_CONV_AE(nn.Module):
 
         if self.training:
             a1 = self._apply_spatial_sparsity(a1)
-            a1 = self._apply_lifetime_sparsity(a1)
+            if self.use_population_sparsity:
+                k_frac = self._compute_annealed_k(
+                    epoch=epoch,
+                    inputs_processed_in_epoch=inputs_processed_in_epoch,
+                )
+                a1 = self._apply_population_sparsity(a1, k_frac)
+            else:
+                a1 = self._apply_lifetime_sparsity(a1)
         else:
             self.last_latent = a1.detach()
 

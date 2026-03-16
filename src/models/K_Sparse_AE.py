@@ -7,7 +7,7 @@ class K_Sparse_AE(nn.Module):
     def __init__(
         self,
         dim: tuple,
-        k_original: float,
+        k_population: float,
         total_epochs: int,
         dataset_size: int,
         a: int = 1,
@@ -16,7 +16,7 @@ class K_Sparse_AE(nn.Module):
 
         self.input_dim, self.bottleneck_dim = dim
         self.a            = a
-        self.k_original   = k_original
+        self.k_population   = k_population
         self.total_epochs = total_epochs
         self.dataset_size = dataset_size
 
@@ -24,7 +24,25 @@ class K_Sparse_AE(nn.Module):
         self.identity = nn.Identity()
         self.decoder  = nn.Linear(self.bottleneck_dim, self.input_dim, bias=False)
 
-    def _apply_k_sparsity(self, activations: torch.Tensor, k: float) -> tuple[torch.Tensor, int]:
+    def _compute_annealed_k(
+        self,
+        epoch: int,
+        inputs_processed_in_epoch: int,
+        target_k: float,
+        training: bool,
+    ) -> float:
+        if training:
+            current_samples = epoch * self.dataset_size + inputs_processed_in_epoch
+            anneal_samples  = (self.total_epochs // 2) * self.dataset_size
+            if anneal_samples > 0:
+                progress = min(current_samples / anneal_samples, 1.0)
+            else:
+                progress = 1.0
+            start_k = float(self.bottleneck_dim)
+            return start_k + progress * (target_k - start_k)
+        return self.a * target_k
+
+    def _apply_population_sparsity(self, activations: torch.Tensor, k: float) -> tuple[torch.Tensor, int]:
         k_count = min(max(1, int(k)), activations.shape[1])
         _, topk_idx = torch.topk(activations, k_count, dim=1)
         mask = torch.zeros_like(activations)
@@ -43,24 +61,17 @@ class K_Sparse_AE(nn.Module):
         z1 = self.encoder(x)
         a1 = self.identity(z1)
 
-        # k annealing, so that hidden units have time to learn
-        target_k = self.k_original * self.bottleneck_dim
-        if self.training:
-            current_samples = epoch * self.dataset_size + inputs_processed_in_epoch
-            anneal_samples  = (self.total_epochs // 2) * self.dataset_size
-            
-            if anneal_samples > 0:
-                progress = min(current_samples / anneal_samples, 1.0)
-            else:
-                progress = 1.0
-
-            current_k = self.bottleneck_dim + progress * (target_k - self.bottleneck_dim)
-        else:
-            current_k = self.a * target_k
-            
+        target_k = self.k_population * self.bottleneck_dim
+        current_k = self._compute_annealed_k(
+            epoch=epoch,
+            inputs_processed_in_epoch=inputs_processed_in_epoch,
+            target_k=float(target_k),
+            training=self.training,
+        )
+         
         self.last_k = min(max(1, int(current_k)), self.bottleneck_dim)
 
-        a1 = self._apply_k_sparsity(a1, current_k)
+        a1 = self._apply_population_sparsity(a1, current_k)
         
         if not self.training:
             self.last_latent = a1.detach()
