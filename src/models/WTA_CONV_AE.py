@@ -6,8 +6,8 @@ class WTA_CONV_AE(nn.Module):
     def __init__(
         self,
         dim: tuple,
-        k_spatial: int,
-        k_lifetime: int,
+        k_spatial: float,
+        k_lifetime: float,
         kernel_size: int = 3,
     ) -> None:
         super().__init__()
@@ -22,7 +22,8 @@ class WTA_CONV_AE(nn.Module):
 
     def _apply_spatial_sparsity(self, activations: torch.Tensor) -> torch.Tensor:
         B, C, H, W = activations.shape
-        k = min(max(1, self.k_spatial), H * W)
+        k = max(1, int(self.k_spatial * H * W))
+        k = min(k, H * W)
         flat = activations.view(B, C, -1)
         _, topk_idx = torch.topk(flat, k, dim=2)
         mask = torch.zeros_like(flat)
@@ -31,7 +32,8 @@ class WTA_CONV_AE(nn.Module):
 
     def _apply_lifetime_sparsity(self, activations: torch.Tensor) -> torch.Tensor:
         B, C, H, W = activations.shape
-        k = min(max(1, self.k_lifetime), C * H * W)
+        k = max(1, int(self.k_lifetime * C * H * W))
+        k = min(k, C * H * W)
         flat = activations.view(B, -1)
         _, topk_idx = torch.topk(flat, k, dim=1)
         mask = torch.zeros_like(flat)

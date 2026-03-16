@@ -7,7 +7,7 @@ class K_Sparse_AE(nn.Module):
     def __init__(
         self,
         dim: tuple,
-        k: int,
+        k_original: float,
         total_epochs: int,
         dataset_size: int,
         a: int = 1,
@@ -15,8 +15,8 @@ class K_Sparse_AE(nn.Module):
         super().__init__()
 
         self.input_dim, self.bottleneck_dim = dim
-        self.a = a
-        self.k = k  # number of activations to keep per sample
+        self.a            = a
+        self.k_original   = k_original
         self.total_epochs = total_epochs
         self.dataset_size = dataset_size
 
@@ -44,6 +44,7 @@ class K_Sparse_AE(nn.Module):
         a1 = self.identity(z1)
 
         # k annealing, so that hidden units have time to learn
+        target_k = self.k_original * self.bottleneck_dim
         if self.training:
             current_samples = epoch * self.dataset_size + inputs_processed_in_epoch
             anneal_samples  = (self.total_epochs // 2) * self.dataset_size
@@ -53,9 +54,9 @@ class K_Sparse_AE(nn.Module):
             else:
                 progress = 1.0
 
-            current_k = self.bottleneck_dim + progress * (self.k - self.bottleneck_dim)
+            current_k = self.bottleneck_dim + progress * (target_k - self.bottleneck_dim)
         else:
-            current_k = self.a * self.k
+            current_k = self.a * target_k
             
         self.last_k = min(max(1, int(current_k)), self.bottleneck_dim)
 

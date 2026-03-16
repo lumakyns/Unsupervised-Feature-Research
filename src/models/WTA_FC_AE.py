@@ -1,25 +1,26 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 class WTA_FC_AE(nn.Module):
     def __init__(
         self,
         dim: tuple,
-        k: int,
+        k_lifetime: float,
     ) -> None:
         super().__init__()
 
         self.input_dim, self.bottleneck_dim = dim
-        self.k = k  # number of winners (activations to keep) per hidden unit
+        self.k_lifetime = k_lifetime
 
         self.encoder = nn.Linear(self.input_dim, self.bottleneck_dim, bias=False)
         self.relu    = nn.ReLU()
         self.decoder = nn.Linear(self.bottleneck_dim, self.input_dim, bias=False)
 
     def _apply_lifetime_sparsity(self, activations: torch.Tensor) -> torch.Tensor:
-        k_count = min(max(1, self.k), activations.shape[0])
+        batch_size = activations.shape[0]
+        k_count = max(1, int(self.k_lifetime * batch_size))
+        k_count = min(k_count, batch_size)
         _, topk_idx = torch.topk(activations, k_count, dim=0)
         mask = torch.zeros_like(activations)
         mask.scatter_(0, topk_idx, 1)
