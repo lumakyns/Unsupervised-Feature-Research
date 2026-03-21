@@ -47,7 +47,10 @@ class K_Sparse_AE(nn.Module):
         _, topk_idx = torch.topk(activations, k_count, dim=1)
         mask = torch.zeros_like(activations)
         mask.scatter_(1, topk_idx, 1)
-        return activations * mask
+        sparse = activations * mask
+        if not self.training:
+            self.last_activated_hidden_units = sparse.detach()
+        return sparse
 
     def forward(
         self,

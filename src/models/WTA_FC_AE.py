@@ -24,7 +24,10 @@ class WTA_FC_AE(nn.Module):
         _, topk_idx = torch.topk(activations, k_count, dim=0)
         mask = torch.zeros_like(activations)
         mask.scatter_(0, topk_idx, 1)
-        return activations * mask
+        sparse = activations * mask
+        if not self.training:
+            self.last_activated_hidden_units = sparse.detach()
+        return sparse
 
     def forward(
         self,

@@ -55,7 +55,10 @@ class WTA_CONV_AE(nn.Module):
         _, topk_idx = torch.topk(scores, k_channels, dim=1)
         mask = torch.zeros_like(scores)
         mask.scatter_(1, topk_idx, 1)
-        return activations * mask.view(B, C, 1, 1)
+        sparse = activations * mask.view(B, C, 1, 1)
+        if not self.training:
+            self.last_activated_hidden_units = sparse.detach()
+        return sparse
 
     def _apply_spatial_sparsity(self, activations: torch.Tensor) -> torch.Tensor:
         B, C, H, W = activations.shape
@@ -75,7 +78,10 @@ class WTA_CONV_AE(nn.Module):
         _, topk_idx = torch.topk(flat, k, dim=1)
         mask = torch.zeros_like(flat)
         mask.scatter_(1, topk_idx, 1)
-        return activations * mask.view(B, C, H, W)
+        sparse = activations * mask.view(B, C, H, W)
+        if not self.training:
+            self.last_activated_hidden_units = sparse.detach()
+        return sparse
 
     def forward(
         self,
