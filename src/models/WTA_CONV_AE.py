@@ -11,12 +11,14 @@ class WTA_CONV_AE(nn.Module):
         k_population: float | None = None,
         total_epochs: int = 1,
         dataset_size: int = 1,
+        alpha: float = 1.0,
     ) -> None:
         super().__init__()
         self.in_ch, self.in_h, self.in_w, self.hidden_ch = dim
         self.k_spatial = k_spatial
         self.total_epochs = total_epochs
         self.dataset_size = dataset_size
+        self.alpha = alpha
 
         if k_lifetime is not None and k_population is not None:
             raise ValueError("Specify either k_lifetime or k_population, not both.")
@@ -36,13 +38,13 @@ class WTA_CONV_AE(nn.Module):
         epoch: int,
         inputs_processed_in_epoch: int,
     ) -> float:
+        if not self.training:
+            return self.alpha * self.k_population
+
         target_k_channels = self.k_population * self.hidden_ch
         current_samples = epoch * self.dataset_size + inputs_processed_in_epoch
         anneal_samples  = (self.total_epochs // 2) * self.dataset_size
-        if anneal_samples > 0:
-            progress = min(current_samples / anneal_samples, 1.0)
-        else:
-            progress = 1.0
+        progress = min(current_samples / anneal_samples, 1.0) if anneal_samples > 0 else 1.0
         start_k = float(self.hidden_ch)
         current_k = start_k + progress * (target_k_channels - start_k)
         return current_k / float(self.hidden_ch)
@@ -51,7 +53,7 @@ class WTA_CONV_AE(nn.Module):
         B, C, H, W = activations.shape
         k_channels = max(1, int(k_frac * self.hidden_ch))
         k_channels = min(k_channels, self.hidden_ch)
-        scores = activations.view(B, C, -1).pow(2).sum(dim=2)
+        scores = activations.view(B, C, -1).sum(dim=2)
         _, topk_idx = torch.topk(scores, k_channels, dim=1)
         mask = torch.zeros_like(scores)
         mask.scatter_(1, topk_idx, 1)
@@ -95,17 +97,17 @@ class WTA_CONV_AE(nn.Module):
         z1 = self.encoder(x)
         a1 = self.relu(z1)
 
-        if self.training:
-            a1 = self._apply_spatial_sparsity(a1)
-            if self.use_population_sparsity:
-                k_frac = self._compute_annealed_k(
-                    epoch=epoch,
-                    inputs_processed_in_epoch=inputs_processed_in_epoch,
-                )
-                a1 = self._apply_population_sparsity(a1, k_frac)
-            else:
-                a1 = self._apply_lifetime_sparsity(a1)
+        a1 = self._apply_spatial_sparsity(a1)
+        if self.use_population_sparsity:
+            k_frac = self._compute_annealed_k(
+                epoch=epoch,
+                inputs_processed_in_epoch=inputs_processed_in_epoch,
+            )
+            a1 = self._apply_population_sparsity(a1, k_frac)
         else:
+            a1 = self._apply_lifetime_sparsity(a1)
+
+        if not self.training:
             self.last_latent = a1.detach()
 
         z2 = self.decoder(a1)
