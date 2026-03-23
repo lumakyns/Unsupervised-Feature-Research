@@ -15,6 +15,16 @@ class Autoencoder(nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.decoder = nn.Linear(self.bottleneck_dim, self.input_dim, bias=False)
 
+        self.last_filter_mask = torch.ones(1, self.bottleneck_dim)
+
+    @property
+    def detached_encoder_weights(self) -> torch.Tensor:
+        return self.encoder.weight.detach()
+
+    @property
+    def detached_decoder_weights(self) -> torch.Tensor:
+        return self.decoder.weight.detach()
+
     def forward(
         self,
         x: torch.Tensor,
@@ -27,9 +37,7 @@ class Autoencoder(nn.Module):
         a1 = self.sigmoid(z1)
         if not self.training:
             self.last_latent = a1.detach()
-            self.last_filter_mask = torch.ones(
-                a1.shape[0], self.bottleneck_dim, device=a1.device, dtype=a1.dtype
-            )
+            
         z2 = self.decoder(a1)
 
         return z2

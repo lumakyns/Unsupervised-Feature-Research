@@ -20,6 +20,7 @@ class WTA_CONV_AE(nn.Module):
         self.dataset_size = dataset_size
         self.a = a
 
+        # population sparsity is offered as an option in WTA_CONV so we keep things biologically plausible
         if k_lifetime is not None and k_population is not None:
             raise ValueError("Specify either k_lifetime or k_population, not both.")
         if k_lifetime is None and k_population is None:
@@ -33,6 +34,14 @@ class WTA_CONV_AE(nn.Module):
         self.decoder = nn.ConvTranspose2d(self.hidden_ch, self.in_ch, kernel_size=11, padding=5, bias=False)
         self.relu    = nn.ReLU()
 
+    @property
+    def detached_encoder_weights(self) -> torch.Tensor:
+        return self.encoder.weight.detach()
+
+    @property
+    def detached_decoder_weights(self) -> torch.Tensor:
+        return self.decoder.weight.detach()
+
     def _compute_annealed_k(
         self,
         epoch: int,
@@ -43,15 +52,16 @@ class WTA_CONV_AE(nn.Module):
         if training:
             current_samples = epoch * self.dataset_size + inputs_processed_in_epoch
             anneal_samples  = (self.total_epochs // 2) * self.dataset_size
-            progress = min(current_samples / anneal_samples, 1.0) if anneal_samples > 0 else 1.0
-            start_k = float(self.hidden_ch)
+            progress        = min(current_samples / anneal_samples, 1.0) if anneal_samples > 0 else 1.0
+            start_k         = float(self.hidden_ch)
             return start_k + progress * (target_k - start_k)
-        return self.a * target_k
+        else:
+            return self.a * target_k
 
     def _apply_population_sparsity(self, activations: torch.Tensor, k: float) -> torch.Tensor:
         B, C, H, W = activations.shape
         k_count = min(max(1, int(k)), activations.shape[1])
-        scores = activations.view(B, C, -1).sum(dim=2)
+        scores  = activations.view(B, C, -1).sum(dim=2)
         _, topk_idx = torch.topk(scores, k_count, dim=1)
         mask = torch.zeros_like(scores)
         mask.scatter_(1, topk_idx, 1)
