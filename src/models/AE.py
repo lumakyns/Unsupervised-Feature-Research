@@ -42,4 +42,4 @@ class Autoencoder(nn.Module):
             
         z2 = self.decoder(a1)
 
-        return z2
+        return z2, a1 # output, activations

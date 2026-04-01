@@ -87,4 +87,5 @@ class K_Sparse_AE(nn.Module):
             self.last_latent = a1.detach()
             
         z2 = self.decoder(a1)
-        return z2
+        
+        return z2, a1 # output, activations

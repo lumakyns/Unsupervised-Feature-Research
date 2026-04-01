@@ -122,8 +122,7 @@ class WTA_CONV_AE(nn.Module):
         else:
             a1 = self._apply_lifetime_sparsity(a1)
 
-        if not self.training:
-            self.last_latent = a1.detach()
-
         z2 = self.decoder(a1)
-        return z2.view(z2.shape[0], -1)
+        z2 = z2.view(z2.shape[0], -1)
+        
+        return z2, a1 # output, activations

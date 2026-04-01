@@ -50,9 +50,7 @@ class WTA_FC_AE(nn.Module):
 
         if self.training:
             a1 = self._apply_lifetime_sparsity(a1)
-        else:
-            self.last_latent = a1.detach()
 
         z2 = self.decoder(a1)
 
-        return z2
+        return z2, a1 # output, activations
