@@ -1,0 +1,34 @@
+name: Upload to Google Drive
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install rclone
+        run: |
+          curl https://rclone.org/install.sh | sudo bash
+
+      - name: Configure rclone
+        run: |
+          mkdir -p ~/.config/rclone
+          echo "${{ secrets.GDRIVE_CREDENTIALS }}" > credentials.json
+          cat > ~/.config/rclone/rclone.conf <<EOF
+[gdrive]
+type = drive
+scope = drive
+service_account_file = credentials.json
+EOF
+
+      - name: Upload files to Google Drive
+        run: |
+          rclone mkdir "gdrive:Research/Unsupervised-Feature-Research"
+          rclone sync ./ "gdrive:Research/Unsupervised-Feature-Research" --filter-from .gitignore --progress
