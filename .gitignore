@@ -8,6 +8,7 @@ __pycache__/
 data/**
 !data/**/
 !data/**/.gitkeep
+!data/download.py
 
 packages/correlation/data/
 packages/correlation/outputs/

@@ -8,6 +8,7 @@ the same structure and execution contract.
 
 ```text
 data/
+  download.py
   <dataset>/.gitkeep
 checkpoints/
   <experiment>/
@@ -33,9 +34,10 @@ src/
 - Shared utilities directly under `src/` must be genuinely dataset-agnostic.
   Dataset enums, metadata, loaders, transforms, splits, and preprocessing are
   never shared between experiments.
-- Write checkpoints under `checkpoints/<experiment>/`. Do not commit datasets,
-  checkpoints, W&B files, generated plots, or other run artifacts. Dataset
-  directories contain only a tracked `.gitkeep` placeholder.
+- Use `data/download.py` to download and prepare missing datasets. Write
+  checkpoints under `checkpoints/<experiment>/`. Do not commit downloaded
+  datasets, checkpoints, W&B files, generated plots, or other run artifacts.
+  Dataset directories contain only a tracked `.gitkeep` placeholder.
 
 ## Dataset contract
 
