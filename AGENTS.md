@@ -71,6 +71,10 @@ src/
   scheduler, seed, epoch count, batch size, data-loader settings, checkpoint
   policy, and W&B settings. CLI arguments may select a config file but should
   not grow into a second configuration system. Never put credentials in config.
+- When practical, structure the config so it can also serve as the basis for a
+  W&B sweep. Keep important experimental choices sweep-ready, such as dataset,
+  model variant, seed, learning rates, optimizer settings, batch size, epoch or
+  step counts, loss-specific hyperparameters, and W&B mode.
 - Seed Python, NumPy, and the ML framework; select the compute device explicitly;
   and record the fully resolved config in W&B.
 - Initialize W&B with a project name of

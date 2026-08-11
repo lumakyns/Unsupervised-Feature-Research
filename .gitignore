@@ -4,6 +4,11 @@
 .codex
 __pycache__/
 
+# Checkpoints are local run artifacts. Keep experiment placeholders in Git.
+checkpoints/**
+!checkpoints/**/
+!checkpoints/**/.gitkeep
+
 # Dataset contents are local/generated. Keep the directory skeleton in Git.
 data/**
 !data/**/

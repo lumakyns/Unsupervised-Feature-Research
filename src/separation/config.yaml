@@ -1,0 +1,80 @@
+dataset: cifar10
+variant: layer123
+seed: 0
+device: auto
+data_root: data
+
+model:
+  channels: [32, 64, 128]
+  kernel_size: 3
+  dropout: 0.1
+
+dataloader:
+  batch_size: 128
+  num_workers: 2
+  pin_memory: true
+  normalize: true
+
+optimizer:
+  type: adamw
+  weight_decay: 0.0001
+
+separation:
+  learning_rate: 0.001
+  epochs: 3
+  steps_per_epoch: null
+  pairs_per_layer: 16
+
+regular:
+  learning_rate: 0.001
+  epochs: 20
+
+variants:
+  baseline: []
+  layer1: [0]
+  layer12: [0, 1]
+  layer123: [0, 1, 2]
+
+checkpoint:
+  enabled: true
+  dir: checkpoints/separation
+
+wandb:
+  mode: online
+  entity: null
+  group: null
+  tags: []
+
+sweep:
+  method: grid
+  metric:
+    name: validation/accuracy
+    goal: maximize
+  parameters:
+    dataset:
+      values: [cifar10, mnist]
+    variant:
+      values: [baseline, layer1, layer12, layer123]
+    seed:
+      values: [0, 1, 2]
+    model.channels:
+      values:
+        - [32, 64, 128]
+    dataloader.batch_size:
+      values: [128]
+    regular.learning_rate:
+      values: [0.001]
+    separation.learning_rate:
+      values: [0.001]
+    separation.epochs:
+      values: [3]
+    separation.pairs_per_layer:
+      values: [16]
+    optimizer.type:
+      values: [adamw]
+    optimizer.weight_decay:
+      values: [0.0001]
+    regular.epochs:
+      values: [20]
+    wandb.mode:
+      values: [online]
