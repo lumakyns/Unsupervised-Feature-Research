@@ -159,8 +159,8 @@ def selected_layers(config: dict[str, Any]) -> list[int]:
         raise ValueError(f"Unknown variant {variant!r}; choose one of {choices}")
     layers = list(variants[variant])
     for layer in layers:
-        if layer not in (0, 1, 2):
-            raise ValueError("Separation layers must be 0, 1, or 2")
+        if layer not in (0, 1, 2, 3):
+            raise ValueError("Separation layers must be 0, 1, 2, or 3")
     return layers
 
 
@@ -173,25 +173,44 @@ def separation_loss(
     if not layers:
         raise ValueError("separation_loss requires at least one selected layer")
 
-    outputs = model.conv_outputs(images, detach_layer_inputs=True)
+    inputs = model.conv_inputs(images, detach_layer_inputs=True)
+    convolutions = (model.conv1, model.conv2, model.conv3, model.conv4)
     losses = []
     cosine_abs_sum = 0.0
     cosine_count = 0
 
     for layer_idx in layers:
-        activations = outputs[layer_idx]
-        channels = activations.shape[1]
-        if channels < 2:
-            raise ValueError(f"Layer {layer_idx} needs at least two filters")
+        layer_input = inputs[layer_idx]
+        convolution = convolutions[layer_idx]
+        kernel_size = convolution.kernel_size[0]
+        height, width = layer_input.shape[-2:]
+        if height < kernel_size or width < kernel_size:
+            raise ValueError(
+                f"Layer {layer_idx} input is too small for a {kernel_size}x{kernel_size} patch"
+            )
 
-        for _ in range(pairs_per_layer):
-            pair = torch.randperm(channels, device=activations.device)[:2]
-            response_a = activations[:, pair[0], :, :].flatten()
-            response_b = activations[:, pair[1], :, :].flatten()
-            cosine = F.cosine_similarity(response_a, response_b, dim=0, eps=1e-8)
-            losses.append(cosine.square())
-            cosine_abs_sum += float(cosine.detach().abs().cpu())
-            cosine_count += 1
+        patches = F.unfold(layer_input, kernel_size=kernel_size)
+        patch_count = patches.shape[-1]
+        for image_idx in range(layer_input.shape[0]):
+            sample_count = pairs_per_layer * 2
+            locations = torch.randint(
+                patch_count,
+                (sample_count,),
+                device=layer_input.device,
+            )
+            sampled = patches[image_idx, :, locations]
+            representations = F.linear(
+                sampled.transpose(0, 1),
+                convolution.weight.flatten(1),
+                convolution.bias,
+            )
+            for response_a, response_b in representations.reshape(
+                pairs_per_layer, 2, -1
+            ):
+                cosine = F.cosine_similarity(response_a, response_b, dim=0, eps=1e-8)
+                losses.append(cosine.square())
+                cosine_abs_sum += float(cosine.detach().abs().cpu())
+                cosine_count += 1
 
     return torch.stack(losses).mean(), cosine_abs_sum / max(1, cosine_count)
 
@@ -373,6 +392,10 @@ def resolved_config(config: dict[str, Any]) -> dict[str, Any]:
     config["separation"]["pairs_per_layer"] = int(
         config["separation"]["pairs_per_layer"]
     )
+    if config["separation"]["pairs_per_layer"] < 1:
+        raise ValueError("separation.pairs_per_layer must be positive")
+    if len(config["model"]["channels"]) != 4:
+        raise ValueError("model.channels must contain four channel widths")
     config["regular"]["epochs"] = int(config["regular"]["epochs"])
     selected_layers(config)
     return config

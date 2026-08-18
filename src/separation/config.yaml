@@ -5,7 +5,7 @@ device: auto
 data_root: data
 
 model:
-  channels: [32, 64, 128]
+  channels: [32, 64, 128, 256]
   kernel_size: 3
   dropout: 0.0
 
@@ -34,6 +34,7 @@ variants:
   layer1: [0]
   layer12: [0, 1]
   layer123: [0, 1, 2]
+  layer1234: [0, 1, 2, 3]
 
 checkpoint:
   enabled: true
@@ -52,24 +53,22 @@ sweep:
     goal: maximize
   parameters:
     dataset:
-      values: [cifar10, mnist]
+      values: [cifar10]
     variant:
-      values: [baseline, layer1, layer12, layer123]
-    seed:
-      values: [0, 1, 2]
+      values: [baseline, layer12, layer1234]
     model.channels:
       values:
-        - [32, 64, 128]
+        - [32, 64, 128, 256]
     dataloader.batch_size:
-      values: [128]
+      values: [64, 128]
     regular.learning_rate:
-      values: [0.001]
+      values: [0.0003, 0.003]
     separation.learning_rate:
-      values: [0.001]
+      values: [0.0003, 0.003]
     separation.epochs:
-      values: [3]
+      values: [1, 5]
     separation.pairs_per_layer:
-      values: [16]
+      values: [8, 32]
     optimizer.type:
       values: [adamw]
     optimizer.weight_decay:
