@@ -46,5 +46,13 @@ Run from the repository root:
 python -m src.separation.training --config src/separation/config.yaml
 ```
 
-W&B sweeps can override the YAML values, especially `dataset` and `variant`, to
-compare MNIST and CIFAR-10 across the different pretraining depths.
+Create and run the W&B sweep from the repository root:
+
+```bash
+wandb sweep --project separation src/separation/sweep.yaml
+wandb agent <entity>/separation/<sweep-id>
+```
+
+Use the agent command printed by `wandb sweep`. The sweep overrides values from
+`config.yaml`, especially `dataset` and `variant`, to compare configurations
+across the different pretraining depths.

@@ -71,6 +71,11 @@ src/
   scheduler, seed, epoch count, batch size, data-loader settings, checkpoint
   policy, and W&B settings. CLI arguments may select a config file but should
   not grow into a second configuration system. Never put credentials in config.
+- Keep W&B sweep definitions in a separate `src/<experiment>/sweep.yaml`, not
+  nested inside `config.yaml`. The sweep file must be directly usable with
+  `wandb sweep src/<experiment>/sweep.yaml`, specify the experiment's module
+  training command, and override values from the experiment config using
+  dotted parameter keys where needed.
 - When practical, structure the config so it can also serve as the basis for a
   W&B sweep. Keep important experimental choices sweep-ready, such as dataset,
   model variant, seed, learning rates, optimizer settings, batch size, epoch or

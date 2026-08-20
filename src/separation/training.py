@@ -96,6 +96,8 @@ def init_wandb(config: dict[str, Any], timestamp: str) -> Any | None:
     wandb.define_metric("regular loss", step_metric="regular_step")
     wandb.define_metric("train/loss", step_metric="regular_step")
     wandb.define_metric("train/accuracy", step_metric="regular_step")
+    wandb.define_metric("train/precision", step_metric="regular_step")
+    wandb.define_metric("train/recall", step_metric="regular_step")
     wandb.define_metric("regular/accuracy", step_metric="regular_step")
     wandb.define_metric("validation/*", step_metric="regular_step")
     return run
@@ -175,9 +177,7 @@ def separation_loss(
 
     inputs = model.conv_inputs(images, detach_layer_inputs=True)
     convolutions = (model.conv1, model.conv2, model.conv3, model.conv4)
-    losses = []
-    cosine_abs_sum = 0.0
-    cosine_count = 0
+    layer_cosines = []
 
     for layer_idx in layers:
         layer_input = inputs[layer_idx]
@@ -191,28 +191,38 @@ def separation_loss(
 
         patches = F.unfold(layer_input, kernel_size=kernel_size)
         patch_count = patches.shape[-1]
-        for image_idx in range(layer_input.shape[0]):
-            sample_count = pairs_per_layer * 2
-            locations = torch.randint(
-                patch_count,
-                (sample_count,),
-                device=layer_input.device,
-            )
-            sampled = patches[image_idx, :, locations]
-            representations = F.linear(
-                sampled.transpose(0, 1),
-                convolution.weight.flatten(1),
-                convolution.bias,
-            )
-            for response_a, response_b in representations.reshape(
-                pairs_per_layer, 2, -1
-            ):
-                cosine = F.cosine_similarity(response_a, response_b, dim=0, eps=1e-8)
-                losses.append(cosine.square())
-                cosine_abs_sum += float(cosine.detach().abs().cpu())
-                cosine_count += 1
+        batch_size, patch_width, _ = patches.shape
+        sample_count = pairs_per_layer * 2
+        locations = torch.randint(
+            patch_count,
+            (batch_size, sample_count),
+            device=layer_input.device,
+        )
+        sampled = patches.gather(
+            dim=2,
+            index=locations.unsqueeze(1).expand(-1, patch_width, -1),
+        ).transpose(1, 2)
 
-    return torch.stack(losses).mean(), cosine_abs_sum / max(1, cosine_count)
+        # [B, 2P, patch_width] @ [filters, patch_width].T -> [B, 2P, filters].
+        # Computing every image and pair together avoids thousands of small GPU
+        # kernel launches and device-to-CPU synchronizations per training batch.
+        representations = F.linear(
+            sampled,
+            convolution.weight.flatten(1),
+            convolution.bias,
+        ).reshape(batch_size, pairs_per_layer, 2, -1)
+        cosines = F.cosine_similarity(
+            representations[:, :, 0],
+            representations[:, :, 1],
+            dim=-1,
+            eps=1e-8,
+        )
+        layer_cosines.append(cosines)
+
+    all_cosines = torch.stack(layer_cosines)
+    loss = all_cosines.square().mean()
+    cosine_abs = float(all_cosines.detach().abs().mean().cpu())
+    return loss, cosine_abs
 
 
 def run_separation_pretraining(
@@ -266,9 +276,33 @@ def run_separation_pretraining(
                 )
 
 
-def accuracy(logits: torch.Tensor, labels: torch.Tensor) -> float:
+def confusion_matrix(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+) -> torch.Tensor:
+    """Return a multiclass confusion matrix with actual classes on rows."""
+
     predictions = torch.argmax(logits, dim=1)
-    return float((predictions == labels).float().mean().detach().cpu())
+    num_classes = logits.shape[1]
+    indices = labels * num_classes + predictions
+    return torch.bincount(indices, minlength=num_classes**2).reshape(
+        num_classes, num_classes
+    )
+
+
+def metrics_from_confusion(confusion: torch.Tensor) -> tuple[float, float, float]:
+    """Return accuracy, macro precision, and macro recall."""
+
+    confusion = confusion.to(dtype=torch.float64)
+    true_positives = confusion.diag()
+    accuracy_value = true_positives.sum() / confusion.sum().clamp_min(1)
+    precision = true_positives / confusion.sum(dim=0).clamp_min(1)
+    recall = true_positives / confusion.sum(dim=1).clamp_min(1)
+    return (
+        float(accuracy_value.cpu()),
+        float(precision.mean().cpu()),
+        float(recall.mean().cpu()),
+    )
 
 
 def evaluate(
@@ -277,11 +311,11 @@ def evaluate(
     loader: torch.utils.data.DataLoader,
     device: torch.device,
     criterion: nn.Module,
-) -> tuple[float, float]:
+) -> tuple[float, float, float, float]:
     model.eval()
     total_loss = 0.0
-    total_correct = 0
     total_seen = 0
+    total_confusion: torch.Tensor | None = None
     with torch.no_grad():
         for images, labels in loader:
             images = images.to(device, non_blocking=True)
@@ -289,10 +323,24 @@ def evaluate(
             logits = model(images)
             loss = criterion(logits, labels)
             total_loss += float(loss.detach().cpu()) * labels.numel()
-            total_correct += int((logits.argmax(dim=1) == labels).sum().detach().cpu())
             total_seen += labels.numel()
+            batch_confusion = confusion_matrix(logits, labels)
+            if total_confusion is None:
+                total_confusion = batch_confusion
+            else:
+                total_confusion += batch_confusion
     model.train()
-    return total_loss / total_seen, total_correct / total_seen
+    if total_confusion is None:
+        raise ValueError("Cannot evaluate an empty data loader")
+    validation_accuracy, validation_precision, validation_recall = (
+        metrics_from_confusion(total_confusion)
+    )
+    return (
+        total_loss / total_seen,
+        validation_accuracy,
+        validation_precision,
+        validation_recall,
+    )
 
 
 def run_regular_training(
@@ -327,12 +375,17 @@ def run_regular_training(
 
             global_step += 1
             if run is not None:
+                train_accuracy, train_precision, train_recall = metrics_from_confusion(
+                    confusion_matrix(logits.detach(), labels)
+                )
                 run.log(
                     {
                         "regular loss": float(loss.detach().cpu()),
                         "train/loss": float(loss.detach().cpu()),
-                        "train/accuracy": accuracy(logits, labels),
-                        "regular/accuracy": accuracy(logits, labels),
+                        "train/accuracy": train_accuracy,
+                        "train/precision": train_precision,
+                        "train/recall": train_recall,
+                        "regular/accuracy": train_accuracy,
                         "regular/epoch": epoch,
                         "epoch": epoch,
                         "regular_step": global_step,
@@ -340,7 +393,12 @@ def run_regular_training(
                     }
                 )
 
-        validation_loss, validation_accuracy = evaluate(
+        (
+            validation_loss,
+            validation_accuracy,
+            validation_precision,
+            validation_recall,
+        ) = evaluate(
             model=model,
             loader=validation_loader,
             device=device,
@@ -351,6 +409,8 @@ def run_regular_training(
                 {
                     "validation/loss": validation_loss,
                     "validation/accuracy": validation_accuracy,
+                    "validation/precision": validation_precision,
+                    "validation/recall": validation_recall,
                     "regular/epoch": epoch,
                     "regular_step": global_step,
                 }
